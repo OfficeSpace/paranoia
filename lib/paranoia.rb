@@ -32,18 +32,20 @@ module Paranoia
 
   module Callbacks
     def self.extended(klazz)
-      klazz.define_callbacks :restore
+      [:restore, :really_destroy].each do |callback_name|
+        klazz.define_callbacks callback_name
 
-      klazz.define_singleton_method("before_restore") do |*args, &block|
-        set_callback(:restore, :before, *args, &block)
-      end
+        klazz.define_singleton_method("before_#{callback_name}") do |*args, &block|
+          set_callback(callback_name, :before, *args, &block)
+        end
 
-      klazz.define_singleton_method("around_restore") do |*args, &block|
-        set_callback(:restore, :around, *args, &block)
-      end
+        klazz.define_singleton_method("around_#{callback_name}") do |*args, &block|
+          set_callback(callback_name, :around, *args, &block)
+        end
 
-      klazz.define_singleton_method("after_restore") do |*args, &block|
-        set_callback(:restore, :after, *args, &block)
+        klazz.define_singleton_method("after_#{callback_name}") do |*args, &block|
+          set_callback(callback_name, :after, *args, &block)
+        end
       end
     end
   end
@@ -61,8 +63,10 @@ module Paranoia
   def restore!(opts = {})
     ActiveRecord::Base.transaction do
       run_callbacks(:restore) do
-        update_column paranoia_column, nil
-        restore_associated_records if opts[:recursive]
+        self.class.unscoped do
+          update_column paranoia_column, nil
+          restore_associated_records if opts[:recursive]
+        end
       end
     end
   end
@@ -122,18 +126,23 @@ class ActiveRecord::Base
     alias :destroy! :ar_destroy
     alias :delete! :delete
     def really_destroy!
-      dependent_reflections = self.reflections.select do |name, reflection|
-        reflection.options[:dependent] == :destroy
-      end
-      if dependent_reflections.any?
-        dependent_reflections.each do |name, _|
-          associated_records = self.send(name)
-          # Paranoid models will have this method, non-paranoid models will not
-          associated_records = associated_records.with_deleted if associated_records.respond_to?(:with_deleted)
-          associated_records.each(&:really_destroy!)
+      transaction do
+        run_callbacks(:really_destroy) do
+          dependent_reflections = self.reflections.select do |name, reflection|
+            reflection.options[:dependent] == :destroy
+          end
+          if dependent_reflections.any?
+            dependent_reflections.each do |name, _|
+              associated_records = self.send(name)
+              # Paranoid models will have this method, non-paranoid models will not
+              next unless associated_records && associated_records.paranoid?
+              associated_records = associated_records.with_deleted if associated_records.respond_to?(:with_deleted)
+              associated_records.each(&:really_destroy!)
+            end
+          end
+          destroy!
         end
       end
-      destroy!
     end
 
     include Paranoia
@@ -187,3 +196,5 @@ module ActiveRecord
     end
   end
 end
+
+ActiveRecord::Callbacks::CALLBACKS.push(:before_restore, :after_restore, :before_really_destroy, :after_really_destroy)
