@@ -132,12 +132,15 @@ class ActiveRecord::Base
             reflection.options[:dependent] == :destroy
           end
           if dependent_reflections.any?
-            dependent_reflections.each do |name, _|
+            dependent_reflections.each do |name, reflection|
               associated_records = self.send(name)
               # Paranoid models will have this method, non-paranoid models will not
               next unless associated_records && associated_records.paranoid?
-              associated_records = associated_records.with_deleted if associated_records.respond_to?(:with_deleted)
-              associated_records.each(&:really_destroy!)
+              if reflection.collection?
+                associated_records.with_deleted.each(&:really_destroy!)
+                next
+              end
+              associated_records.really_destroy!
             end
           end
           destroy!
@@ -190,6 +193,7 @@ module ActiveRecord
       protected
       def build_relation_with_paranoia(klass, table, attribute, value)
         relation = build_relation_without_paranoia(klass, table, attribute, value)
+        return relation unless klass.respond_to?(:paranoia_column)
         relation.and(klass.arel_table[klass.paranoia_column].eq(nil))
       end
       alias_method_chain :build_relation, :paranoia
