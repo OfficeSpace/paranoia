@@ -127,6 +127,9 @@ class ParanoiaTest < test_framework
     assert_nil model.instance_variable_get(:@update_callback_called)
     assert_nil model.instance_variable_get(:@save_callback_called)
     assert_nil model.instance_variable_get(:@validate_called)
+    assert_nil model.instance_variable_get(:@before_really_destroy_called)
+    assert_nil model.instance_variable_get(:@really_destroy_called)
+    assert_nil model.instance_variable_get(:@after_really_destroy_called)
 
     assert model.instance_variable_get(:@destroy_callback_called)
     assert model.instance_variable_get(:@after_destroy_callback_called)
@@ -146,6 +149,8 @@ class ParanoiaTest < test_framework
     assert_nil model.instance_variable_get(:@destroy_callback_called)
     assert_nil model.instance_variable_get(:@after_destroy_callback_called)
     assert_nil model.instance_variable_get(:@after_commit_callback_called)
+    assert_nil model.instance_variable_get(:@after_really_destroy_called)
+    assert_nil model.instance_variable_get(:@really_destroy_called)
   end
 
   def test_delete_in_transaction_behavior_for_plain_models_callbacks
@@ -498,6 +503,22 @@ class ParanoiaTest < test_framework
     refute ParanoidModel.unscoped.exists?(model.id)
   end
 
+  def test_really_destroy_with_callback
+    model = CallbackModel.new
+    model.save
+    model.remove_called_variables
+
+    model.really_destroy!
+
+    assert model.instance_variable_get(:@destroy_callback_called)
+    assert model.instance_variable_get(:@after_destroy_callback_called)
+
+    assert model.instance_variable_get(:@really_destroy_called)
+    assert model.instance_variable_get(:@after_really_destroy_called)
+
+    refute CallbackModel.unscoped.exists?(model.id)
+  end
+
   def test_real_destroy_dependent_destroy
     parent = ParentModel.create
     child1 = parent.very_related_models.create
@@ -535,7 +556,7 @@ class ParanoiaTest < test_framework
     model.save
     model.really_destroy!
 
-    assert model.instance_variable_get(:@real_destroy_callback_called)
+    assert model.instance_variable_get(:@really_destroy_callback_called)
   end
 
   def test_really_delete
@@ -703,6 +724,20 @@ class ParanoiaTest < test_framework
     hasOne.restore(:recursive => true)
 
     assert hasOne.reload.deleted_at.nil?
+  end
+
+  def test_has_one_really_destroy_with_nil
+    model = ParanoidModelWithHasOne.create
+    model.really_destroy!
+
+    refute ParanoidModelWithBelong.unscoped.exists?(model.id)
+  end
+
+  def test_has_one_really_destroy_with_record
+    model = ParanoidModelWithHasOne.create { |record| record.build_paranoid_model_with_belong }
+    model.really_destroy!
+
+    refute ParanoidModelWithBelong.unscoped.exists?(model.id)
   end
 
   def test_restore_with_module_scoped_has_one_association
@@ -1058,12 +1093,15 @@ class CallbackModel < ActiveRecord::Base
   before_restore      { |model| model.instance_variable_set :@restore_callback_called, true }
   before_update       { |model| model.instance_variable_set :@update_callback_called, true }
   before_save         { |model| model.instance_variable_set :@save_callback_called, true}
-  before_real_destroy { |model| model.instance_variable_set :@real_destroy_callback_called, true }
+  before_really_destroy { |model| model.instance_variable_set :@really_destroy_callback_called, true }
 
   after_destroy       { |model| model.instance_variable_set :@after_destroy_callback_called, true }
   after_commit        { |model| model.instance_variable_set :@after_commit_callback_called, true }
 
   validate            { |model| model.instance_variable_set :@validate_called, true }
+
+  before_really_destroy { |model| model.instance_variable_set :@really_destroy_called, true }
+  after_really_destroy { |model| model.instance_variable_set :@after_really_destroy_called, true }
 
   def remove_called_variables
     instance_variables.each {|name| (name.to_s.end_with?('_called')) ? remove_instance_variable(name) : nil}

@@ -269,9 +269,9 @@ For example if you want to index your records in some search engine you can go l
 class Product < ActiveRecord::Base
   acts_as_paranoid
 
-  after_destroy      :update_document_in_search_engine
-  after_restore      :update_document_in_search_engine
-  after_real_destroy :remove_document_from_search_engine
+  after_destroy        :update_document_in_search_engine
+  after_restore        :update_document_in_search_engine
+  after_really_destroy :remove_document_from_search_engine
 end
 ```
 

@@ -54,7 +54,7 @@ module Paranoia
 
   module Callbacks
     def self.extended(klazz)
-      [:restore, :real_destroy].each do |callback_name|
+      [:restore, :really_destroy].each do |callback_name|
         klazz.define_callbacks callback_name
 
         klazz.define_singleton_method("before_#{callback_name}") do |*args, &block|
@@ -127,20 +127,20 @@ module Paranoia
 
   def really_destroy!
     transaction do
-      run_callbacks(:real_destroy) do
+      run_callbacks(:really_destroy) do
         dependent_reflections = self.class.reflections.select do |name, reflection|
           reflection.options[:dependent] == :destroy
         end
         if dependent_reflections.any?
           dependent_reflections.each do |name, reflection|
-            association_data = self.send(name)
-            # has_one association can return nil
-            # .paranoid? will work for both instances and classes
-            next unless association_data && association_data.paranoid?
+            associated_records = self.send(name)
+            # Paranoid models will have this method, non-paranoid models will not
+            next unless associated_records && associated_records.paranoid?
             if reflection.collection?
-              next association_data.with_deleted.each(&:really_destroy!)
+              associated_records.with_deleted.each(&:really_destroy!)
+              next
             end
-            association_data.really_destroy!
+            associated_records.really_destroy!
           end
         end
         write_attribute(paranoia_column, current_time_from_proper_timezone)
