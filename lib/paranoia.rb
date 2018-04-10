@@ -284,3 +284,5 @@ module ActiveRecord
     end
   end
 end
+
+ActiveRecord::Callbacks::CALLBACKS.push(:before_restore, :after_restore, :before_really_destroy, :after_really_destroy)
