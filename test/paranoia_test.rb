@@ -22,6 +22,42 @@ ActiveRecord::Base.connection.execute 'CREATE TABLE jobs (id INTEGER NOT NULL PR
 ActiveRecord::Base.connection.execute 'CREATE TABLE custom_column_models (id INTEGER NOT NULL PRIMARY KEY, destroyed_at DATETIME)'
 ActiveRecord::Base.connection.execute 'CREATE TABLE non_paranoid_models (id INTEGER NOT NULL PRIMARY KEY, parent_model_id INTEGER)'
 
+ActiveRecord::Base.class_eval do
+  def update_columns(attr_hash)
+    # adapted from
+    # http://apidock.com/rails/v3.1.0/ActiveRecord/Persistence/update_column
+    # handwritten backport of `update_columns`.
+    raise ActiveRecord::ActiveRecordError, "can not update on a new record object" unless persisted?
+
+    attr_hash = attr_hash.stringify_keys
+
+    attr_hash.each do |name, value|
+      raise ActiveRecordError, "#{name} is marked as readonly" if self.class.readonly_attributes.include?(name)
+    end
+
+    attr_hash.each do |name, value|
+      raw_write_attribute(name, value)
+    end
+
+    columns_hash = self.class.columns_hash
+
+    array_safe_attr_hash = attr_hash.map do |attr_name, value|
+      column = columns_hash[attr_name]
+      if column.type.match(/_array$/) && !value.nil?
+        # https://github.com/tlconnor/activerecord-postgres-array/blob/master/lib/activerecord-postgres-array/activerecord.rb#L43
+        raise ArrayTypeMismatch, "#{column.name} must be an Array or have a valid array value (#{value})" unless value.kind_of?(Array) || value.valid_postgres_array?
+        # serializes Array to Postgres style {} array. Passing true prevents additional quoting of the postgres array
+        # if the value is already a stringified postgresq array then it is an identify method
+        [attr_name, value.to_postgres_array(true)]
+      else
+        [attr_name, value]
+      end
+    end.to_h
+
+    self.class.unscoped.update_all(array_safe_attr_hash, self.class.primary_key => id) == 1
+  end
+end
+
 class ParanoiaTest < Test::Unit::TestCase
   def test_plain_model_class_is_not_paranoid
     assert_equal false, PlainModel.paranoid?

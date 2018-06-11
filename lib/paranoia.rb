@@ -61,10 +61,19 @@ module Paranoia
   end
 
   def restore!(opts = {})
+    update_hash = {paranoia_column => nil}
+    # ensure on restore we update the updated_at column
+    timestamp_attributes_for_update = timestamp_attributes_for_update_in_model
+
+    if timestamp_attributes_for_update.any?
+      current_time = current_time_from_proper_timezone
+      timestamp_attributes_for_update.each{ |col| update_hash[col] = current_time }
+    end
+
     ActiveRecord::Base.transaction do
       run_callbacks(:restore) do
         self.class.unscoped do
-          update_column paranoia_column, nil
+          update_columns(update_hash)
           restore_associated_records if opts[:recursive]
         end
       end
